@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Seat } from "@belot/shared";
+import type { GameView, Seat } from "@belot/shared";
 import {
   JOIN_FAIL_LIMIT,
   ROOM_IDLE_MS,
@@ -14,7 +14,7 @@ function stubHost(): GameHost {
     onSeatReleased: vi.fn(),
     onSeatFilled: vi.fn(),
     onIntent: vi.fn(() => null),
-    view: vi.fn(() => ({ phase: "bidding" as const })),
+    view: vi.fn(() => ({ phase: "bidding" }) as unknown as GameView),
     phase: vi.fn(() => "bidding" as const),
   };
 }
