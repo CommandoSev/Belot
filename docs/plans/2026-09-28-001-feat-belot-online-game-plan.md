@@ -32,7 +32,7 @@ There is no existing project. The request is a greenfield TypeScript app that mu
 - R6. Deal 5 cards for bidding, then 3 more after bidding, 8 per player.
 - R7. Bidding starts right of the dealer with contracts in the order спатия, каро, купа, пика, без коз, всичко коз; a bid must be higher than the current one; контра is available only to the side not holding the bid and реконтра only to the bidding side after a контра; bidding ends after three consecutive passes following a bid, and four passes with no bid redeals with the next dealer.
 - R8. Card order and values follow the contract: trump order J 9 A 10 K Q 8 7 (20 14 11 10 4 3 0 0), plain order A 10 K Q J 9 8 7 (11 10 4 3 2 0 0 0); всички козове uses trump order in every suit; без коз uses plain order in every suit with card points doubled.
-- R9. Legal card rules: always follow suit if able. In a suit contract, when void you must trump only if an opponent is winning the trick, and must overtrump an opponent's trump when able. In всички козове you must beat the highest card in the trick whenever able, regardless of who is winning. In без коз there is no obligation beyond following suit.
+- R9. Legal card rules: always follow suit if able. In a suit contract, when trump is led you must play a higher trump if able regardless of who is winning; when void in the led suit you must trump only if an opponent is winning the trick, and must overtrump an opponent's trump when able. In всички козове you must beat the highest card in the trick whenever able, regardless of who is winning. In без коз there is no obligation beyond following suit. The partner exemption on a trump lead is a config knob because sources disagree.
 - R10. Declarations: терца 20, кварта 50, квинта or longer 100, каре of 10/Q/K/A 100, каре 9 150, каре J 200, каре 7 or 8 nothing, белот 20. Sequences and карета are declared during the first trick and revealed after it; белот is declared when playing either the K or Q of trump while still holding the other. No sequences, карета or белот in без коз; in всички козове белот counts in every suit.
 - R11. Only the side holding the best sequence scores any sequences; longer beats shorter, then higher top card; an exact tie scores nothing for either side. Карета are compared the same way and separately. A card may serve either a sequence or a каре, not both.
 
@@ -61,6 +61,13 @@ There is no existing project. The request is a greenfield TypeScript app that mu
 - R23. The whole app runs as one Node process serving the built client and the WebSocket on the port the host injects.
 - R24. The repository deploys to Render's free web service from a Git connection without Docker, and the README carries the exact steps.
 
+**Match lifecycle and recovery**
+
+- R25. After a match ends, any seated player can start a new match in the same room with the same seats; scores and hanging points reset and the dealer advances.
+- R26. Joining a room whose game has already started is rejected with a Bulgarian message; the room never admits a fifth participant.
+- R27. When a seat has been disconnected for at least 60 seconds, any connected seated player can free it; the room returns to waiting with that seat empty, the current deal is abandoned, and the match score is kept.
+- R28. Reopening the site in the same browser returns the player to their room and seat without retyping the code; the share link carries the room code so a friend's lobby is pre-filled.
+
 ---
 
 ## Key Technical Decisions
@@ -69,10 +76,10 @@ There is no existing project. The request is a greenfield TypeScript app that mu
 - **Rules engine is pure and deterministic.** All engine functions take a state and return a new state or a result; the shuffle takes an injectable random source. This makes the scoring and legality rules unit-testable with fixed hands, which is where most of the correctness risk sits.
 - **Server-authoritative game loop over Socket.IO 4.** Clients send intents (sit, bid, play), the server validates them against the engine and broadcasts a per-seat redacted view. Socket.IO's reconnection and room primitives cover the lobby without extra libraries. The client keeps the default polling-then-upgrade transport so the Render proxy is handled.
 - **One `state` event carries the whole per-seat view.** Instead of many granular events, the server sends the complete view after every change. The client renders from a single object, which removes client-side state reconciliation bugs and makes reconnection trivial (the next view is the whole truth).
-- **Identity is a random token in localStorage, not an account.** The token identifies the seat owner across reconnects and page reloads. This satisfies "no accounts" and R21 without persistence.
-- **Rooms live in memory only.** Render's free instance spins down after 15 idle minutes and loses state; that matches the use case (a game night) and avoids a database. A room with no connected players for ten minutes is deleted.
+- **Identity is a random token in localStorage, not an account.** The token identifies the seat owner across reconnects and page reloads. It is the only credential that unlocks a seat's hidden hand, so it is minted client-side with `crypto.randomUUID()` (122 bits of entropy) and never shown in the UI. The server keeps a token-to-room index so a reconnecting socket is placed back in its room without a join intent. This satisfies "no accounts", R21 and R28 without persistence.
+- **Rooms live in memory only.** Render's free instance spins down after 15 idle minutes and loses state; that matches the use case (a game night) and avoids a database. A room with no connected players for ten minutes is deleted. Because every deploy restarts the process and wipes live rooms, Render auto-deploy is switched off and fixes are deployed by hand between games.
 - **Rounding thresholds and the валат bonus are engine configuration, not literals.** Research flagged the 6/5/4 rounding and the 90-point валат as the best-attested but regionally contested conventions; keeping them in one config object lets house rules change in one place.
-- **Server bundled with esbuild to a single file, client built by Vite, server serves `apps/client/dist`.** Bundling resolves the workspace package at build time so the runtime never needs workspace symlinks. Render runs `pnpm install` and `pnpm build`, then `node apps/server/dist/index.js`.
+- **Server bundled with esbuild to a single file, client built by Vite, server serves `apps/client/dist`.** Bundling inlines the workspace package from its TypeScript source so the runtime never needs workspace symlinks; only the real runtime dependencies (`express`, `socket.io`) are marked external. `--packages=external` must not be used because it would also externalize `@belot/shared`. Render runs `pnpm install` and `pnpm build`, then `node apps/server/dist/index.js`.
 - **Cards are drawn with HTML and CSS, not image assets.** Rank text plus a suit glyph on a white rounded card is enough for a clean, modern look and avoids any licensing question around Fortegames' artwork.
 - **Vitest for tests.** It runs TypeScript directly in a Vite monorepo with no extra config; the engine and the server room logic are the test surface, the client gets a smoke render only.
 
@@ -124,10 +131,12 @@ stateDiagram-v2
   Playing --> DealEnd: eighth trick resolved
   DealEnd --> Bidding: neither side has won
   DealEnd --> Finished: a side has 151 or more on a non-валат deal
-  Finished --> Waiting: players choose a new game
+  Finished --> Bidding: newGame intent from any seated player
+  Bidding --> Waiting: releaseSeat frees a seat disconnected 60s or more
+  Playing --> Waiting: releaseSeat frees a seat disconnected 60s or more
 ```
 
-A separate `paused` flag overlays Bidding and Playing whenever a seated player is disconnected; intents are rejected while paused and the view shows who is missing.
+A separate `paused` flag overlays Bidding and Playing whenever a seated player is disconnected; intents other than `releaseSeat` are rejected while paused and the view shows who is missing and for how long. A release abandons the current deal, keeps the match score, and the next deal starts when the seat is filled again.
 
 ### One turn, end to end
 
@@ -162,7 +171,7 @@ if bidders == opponents     -> opponents get round(rawOpponents); round(rawBidde
 else                        -> each side gets round(own raw)
 if контра / реконтра        -> winner gets round(total) * 2 / * 4, loser 0 (tie hangs the multiplied total)
 round(x, contract)          = floor(x / 10) + (x mod 10 >= threshold[contract] ? 1 : 0)
-hanging points from earlier -> added to the winner of this deal
+hanging points from earlier -> added to the winner of this deal; on another tie they stay hanging and accumulate
 ```
 
 ---
@@ -203,7 +212,7 @@ Belot/
     src/App.tsx                lobby vs table routing on view state
     src/socket.ts              connection, identity token, state subscription
     src/i18n/bg.ts             every visible string
-    src/components/            Lobby, Table, Seat, Hand, Card, TrickArea, BiddingPanel, ScorePanel, DealSummary, PauseOverlay
+    src/components/            Lobby, Table, Seat, Hand, Card, TrickArea, BiddingPanel, ScorePanel, DealSummary, MatchEnd, PauseOverlay, ConnectionBanner, Toast
     src/styles/                tokens and layout
 ```
 
@@ -223,13 +232,13 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 
 **Files:** `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `render.yaml`, `packages/shared/package.json`, `packages/shared/src/index.ts`, `apps/server/package.json`, `apps/server/src/index.ts`, `apps/client/package.json`, `apps/client/vite.config.ts`, `apps/client/index.html`, `apps/client/src/main.tsx`, `.gitignore`, `.nvmrc` or `engines` in the root package.
 
-**Approach:** Three workspace packages named `@belot/shared`, `@belot/server`, `@belot/client`. Root `build` runs the shared type check, the Vite client build, then the esbuild server bundle. Root `start` runs the bundled server. The server reads `PORT` from the environment, binds `0.0.0.0`, serves `apps/client/dist` with a fallback to `index.html`, and exposes `/healthz`. Pin the Node major in `engines` so Render picks it up. `render.yaml` declares one free web service with `pnpm install --frozen-lockfile && pnpm build` and `pnpm start`. Vitest is configured at the root with workspace projects for shared and server.
+**Approach:** Three workspace packages named `@belot/shared`, `@belot/server`, `@belot/client`. Root `build` runs the shared type check, the Vite client build, then the esbuild server bundle. Root `start` runs the bundled server. The server reads `PORT` from the environment, binds `0.0.0.0`, serves `apps/client/dist` through `express.static` followed by a terminal middleware that sends `index.html` (Express 5 rejects the old `'*'` route string), and exposes `/healthz`. Pin the Node major in `engines` and the exact local pnpm in `packageManager` so Render uses the same versions that produced the lockfile. `render.yaml` declares one free web service with `pnpm install --frozen-lockfile && pnpm build`, `pnpm start`, the health check path, and `autoDeploy: false`. Vitest is configured at the root with projects for shared and server (node environment) and client (jsdom with React Testing Library). The Vite dev config proxies `/socket.io` to the server port so four local tabs can run against the dev server.
 
-**Patterns to follow:** Standard Vite React template for the client; esbuild `--bundle --platform=node --packages=external` for the server.
+**Patterns to follow:** Standard Vite React template for the client; esbuild `--bundle --platform=node --format=cjs --external:express --external:socket.io` for the server so the shared package is inlined from source.
 
 **Test scenarios:** Test expectation: none -- scaffolding only. Verification covers it.
 
-**Verification:** `pnpm build` produces `apps/client/dist` and `apps/server/dist/index.js`; `pnpm start` serves the placeholder page and `/healthz` returns 200 on the configured port; `pnpm test` runs with zero tests and exits 0.
+**Verification:** `pnpm build` produces `apps/client/dist` and `apps/server/dist/index.js`; the bundle still starts after the `apps/server/node_modules/@belot` symlink is removed; `pnpm start` serves the placeholder page and `/healthz` returns 200 on the configured port; `pnpm test` runs with zero tests and exits 0; the scaffold is pushed and deployed to Render before U2 starts so the hosting path is proven first.
 
 ### U2. Cards, deal and bidding in the engine
 
@@ -281,7 +290,7 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 - Opponent already trumped, holding a higher trump: only higher trumps are legal; holding only lower trumps: any card is legal.
 - Всички козове: led suit held with a card that beats the current best: only beating cards are legal, even when the partner is winning; no beating card held: any card of the led suit is legal.
 - Без коз: led suit held: any card of that suit is legal; void: any card.
-- Trump led in a suit contract: must play higher trump if able.
+- Trump led in a suit contract: must play a higher trump if able, including when the partner led it and is winning; with the config knob flipped the partner exemption applies.
 - Trick winner: highest trump beats any plain card; among plain cards the highest of the led suit wins; in без коз the highest of the led suit wins.
 - Fourth card resolves the trick, the winner leads next, the won cards are added to the winner's side.
 - Eighth trick adds the last-trick bonus to its winner's side.
@@ -340,6 +349,7 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 - Declarations count toward the bidder comparison: bidders 80 in cards plus 20 терца beat opponents at 82.
 - Both sides cross 151 in one deal: the higher total wins; equal totals continue.
 - Hanging points are cleared once awarded.
+- Two consecutive ties accumulate the hanging points; the next decided deal awards the whole accumulated amount to its winner.
 
 **Verification:** Tests pass; every branch of the pipeline has at least one example.
 
@@ -347,39 +357,42 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 
 **Goal:** A Socket.IO server where players create or join rooms by code, sit and stand, are identified by a browser token, and reclaim their seat after a disconnect.
 
-**Requirements:** R1, R2, R3, R21, R22
+**Requirements:** R1, R2, R3, R21, R22, R26, R27, R28
 
 **Dependencies:** U1
 
-**Files:** `apps/server/src/index.ts`, `apps/server/src/rooms.ts`, `packages/shared/src/protocol.ts`, `apps/server/src/__tests__/rooms.test.ts`
+**Files:** `apps/server/src/index.ts`, `apps/server/src/rooms.ts`, `packages/shared/src/protocol.ts` (created here: intents, view types, enums, Bulgarian error and label maps; U7 extends the view types), `apps/server/src/__tests__/rooms.test.ts`
 
-**Approach:** The client sends its identity token and nickname on connect. `RoomManager` keeps a map of room code to room, where a room holds four seats (player id, nickname, connected flag), a set of spectating sockets that have not sat down, and the game controller once started. Room codes are four uppercase letters without ambiguous glyphs. Intents: create, join, sit, stand. Sitting in an occupied seat or standing during a game is rejected with a Bulgarian error. On disconnect the seat stays owned and `connected` flips false; on a new socket with the same token the seat reconnects and the full view is resent. A room with no connected sockets for ten minutes is removed. All Bulgarian error strings live in one map in the protocol module so client and server share them.
+**Approach:** The client sends its identity token and nickname on connect. `RoomManager` keeps a map of room code to room and a token-to-room index. A room holds four seats (player id, nickname, connected flag, disconnected-since timestamp), the sockets of players who joined but have not sat down while the room is waiting, and the game controller once started. Room codes are four uppercase letters without ambiguous glyphs. Intents: create, join, sit, stand, releaseSeat. Sitting in an occupied seat or standing during a game is rejected with a Bulgarian error. Joining a room whose game has started is rejected with "Играта вече започна" unless the token already owns a seat there. On connect, a token found in the index is placed straight back into its room and seat and receives the full view. On disconnect the seat stays owned and `connected` flips false. `releaseSeat` from a connected seated player frees a seat that has been disconnected for at least 60 seconds and hands the room back to the controller as waiting. Failed join attempts are limited per socket (ten per minute) so codes cannot be enumerated quickly. A room with no connected sockets for ten minutes is removed. All Bulgarian error strings live in one map in the protocol module so client and server share them.
 
-**Patterns to follow:** Socket.IO rooms keyed by room code for broadcast; one handler module per intent family.
+**Patterns to follow:** Socket.IO rooms keyed by room code for lobby-level events only; per-seat views are emitted to each seat's socket individually, never broadcast to the room. One handler module per intent family.
 
 **Test scenarios:**
 - Creating a room returns a code and seats the creator in no seat until they choose one.
 - Joining an unknown code returns an error; joining a known code adds the player as unseated.
 - Two players cannot occupy the same seat; the second attempt is rejected and the first stays.
 - Standing up before the game returns the seat to empty; standing up during a game is rejected.
-- The fourth sit-down flips the room to a started game.
+- The fourth sit-down marks the room as started and invokes the game-start hook (stub controller).
+- Joining a started room with a new token is rejected; joining with a token that owns a seat there succeeds.
 - Disconnecting a seated player marks the seat disconnected and keeps the nickname; reconnecting with the same token restores it; a different token cannot take that seat.
+- A new socket presenting a token that owns a seat in a live room lands back in that room and seat without a join intent.
+- `releaseSeat` is rejected while the seat has been gone under 60 seconds and succeeds after (fake timers); the freed seat can be taken by a new token.
+- The eleventh failed join within a minute from one socket is rejected regardless of the code.
 - A room with no connected players is removed after the idle window (use fake timers).
-- Views sent to seat 1 never contain seat 0's cards or the deck.
 
-**Verification:** Tests pass; two browser tabs can create and join a room locally and see each other sit.
+**Verification:** Tests pass; two browser tabs can create and join a room locally and see each other sit; reloading a tab returns it to the same seat.
 
 ### U7. Game controller and per-seat views
 
 **Goal:** Drive a room's game through the engine from bidding to match end, pausing on disconnect, and produce the redacted view each seat receives.
 
-**Requirements:** R3, R4, R6, R7, R9, R10, R15, R16, R18, R20, R21, R22
+**Requirements:** R3, R4, R6, R7, R9, R10, R15, R16, R18, R20, R21, R22, R25, R27
 
 **Dependencies:** U2, U3, U4, U5, U6
 
-**Files:** `apps/server/src/game.ts`, `apps/server/src/views.ts`, `packages/shared/src/protocol.ts`, `apps/server/src/__tests__/game.test.ts`, `apps/server/src/__tests__/views.test.ts`
+**Files:** `apps/server/src/game.ts`, `apps/server/src/views.ts`, `packages/shared/src/protocol.ts` (extend the view types only), `apps/server/src/__tests__/game.test.ts`, `apps/server/src/__tests__/views.test.ts`
 
-**Approach:** `GameController` owns the match state (scores, hanging points, dealer seat) and the current deal state (phase, bidding, hands, tricks, declarations). Intents: `bid`, `play` with optional `declare` and `belot` flags. Every intent is validated by seat ownership, turn, pause flag, and the engine's legal set; on success the controller applies it, runs phase transitions (bidding done, deal scored, match finished, redeal), and broadcasts. After a deal ends the controller holds a `dealEnd` phase with the breakdown for a fixed pause before dealing again. `buildView(room, seat)` returns: seats with names, connection and card counts, own hand sorted for display, own legal cards when it is the player's turn, the current trick, the last completed trick briefly, bidding history, contract and multiplier, both sides' scores and hanging points, declarations revealed after trick one, the deal breakdown during `dealEnd`, and the pause status. Declarations offered to a player are computed by the server and included in the view so the client only shows a button.
+**Approach:** `GameController` owns the match state (scores, hanging points, dealer seat) and the current deal state (phase, bidding, hands, tricks, declarations). Intents: `bid`, `play` with optional `declare` and `belot` flags, `newGame` accepted from any seated player while the phase is `finished`. Every intent is validated by seat ownership, turn, pause flag, and the engine's legal set; on success the controller applies it, runs phase transitions (bidding done, deal scored, match finished, redeal), and broadcasts. After a deal ends the controller holds a `dealEnd` phase with the breakdown for a fixed pause before dealing again. `newGame` resets scores and hanging points, advances the dealer and deals. When the room manager frees a seat, the controller abandons the current deal, keeps the match score, and waits; when the seat is filled again it deals with the same dealer. `buildView(room, seat)` returns: seats with names, connection and card counts, own hand sorted for display, own legal cards when it is the player's turn, the current trick, the last completed trick briefly, bidding history, contract and multiplier, both sides' scores and hanging points, declarations revealed after trick one, the deal breakdown during `dealEnd`, and the pause status. Declarations offered to a player are computed by the server and included in the view so the client only shows a button.
 
 **Execution note:** Drive tests through intents against a seeded deal so the whole flow is deterministic.
 
@@ -394,7 +407,10 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 - After the eighth trick the phase is `dealEnd`, the breakdown matches the engine, and after the pause a new deal starts with the next dealer.
 - A deal that reaches 151 on a non-валат deal moves to `finished` with the winner named; a валат deal at 151 continues.
 - Disconnecting a seated player sets paused and rejects intents; reconnecting resumes with the same state.
+- `newGame` from a seated player in `finished` resets both scores and hanging points, advances the dealer and starts bidding; `newGame` in any other phase is rejected.
+- Freeing a seat mid-deal abandons the deal, keeps the scores, and the next sit-down starts a new deal with the same dealer.
 - No view ever includes another seat's hand; hand counts are correct for every seat.
+- A view for a seat that is disconnected includes the seconds since the disconnect so the client can show the release countdown.
 
 **Verification:** Tests pass; a scripted four-client run completes a full match locally.
 
@@ -402,22 +418,27 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 
 **Goal:** The complete React UI: lobby, seat selection, bidding panel, hand and trick area, score panel, declarations, deal summary, pause overlay, all in Bulgarian.
 
-**Requirements:** R1, R2, R4, R17, R18, R19, R20, R21
+**Requirements:** R1, R2, R4, R17, R18, R19, R20, R21, R25, R27, R28
 
 **Dependencies:** U7
 
-**Files:** `apps/client/src/App.tsx`, `apps/client/src/socket.ts`, `apps/client/src/i18n/bg.ts`, `apps/client/src/components/Lobby.tsx`, `Table.tsx`, `Seat.tsx`, `Hand.tsx`, `Card.tsx`, `TrickArea.tsx`, `BiddingPanel.tsx`, `ScorePanel.tsx`, `DealSummary.tsx`, `PauseOverlay.tsx`, `apps/client/src/styles/tokens.css`, `apps/client/src/styles/table.css`, `apps/client/src/__tests__/App.test.tsx`
+**Files:** `apps/client/src/App.tsx`, `apps/client/src/socket.ts`, `apps/client/src/i18n/bg.ts`, `apps/client/src/components/Lobby.tsx`, `apps/client/src/components/Table.tsx`, `apps/client/src/components/Seat.tsx`, `apps/client/src/components/Hand.tsx`, `apps/client/src/components/Card.tsx`, `apps/client/src/components/TrickArea.tsx`, `apps/client/src/components/BiddingPanel.tsx`, `apps/client/src/components/ScorePanel.tsx`, `apps/client/src/components/DealSummary.tsx`, `apps/client/src/components/MatchEnd.tsx`, `apps/client/src/components/PauseOverlay.tsx`, `apps/client/src/components/ConnectionBanner.tsx`, `apps/client/src/components/Toast.tsx`, `apps/client/src/styles/tokens.css`, `apps/client/src/styles/table.css`, `apps/client/src/__tests__/App.test.tsx`
 
-**Approach:** The socket module creates or reads the identity token in localStorage, connects, and exposes the latest view plus `send(intent)` through a small hook; the app renders Lobby when there is no room and Table otherwise. The table is a centered rounded felt area on a dark neutral background: the player's seat at the bottom, partner at the top, opponents left and right, computed by rotating seat indices so the view is always from the player's chair. Cards are white rounded rectangles with rank and a suit glyph in red or near-black, fanned in the hand with a lift on hover and a muted state when not legal. The bidding panel shows the six contracts as buttons in order plus Пас, Контра, Реконтра, enabled from the view's legal bids. The trick area shows the four plays positioned by seat. The score panel shows Ние / Те, the contract, multiplier, and hanging points. On trick one an Анонс button appears when the view offers declarations, and a Белот toggle appears when the selected card qualifies. The deal summary is a modal-like card with the breakdown and a countdown. The pause overlay names the missing player. Typography uses a single system-ui or Inter stack; the design tokens file holds the palette (felt green-teal, off-white cards, one accent for the active turn).
+**Approach:** The socket module creates or reads the identity token in localStorage, connects, and exposes the connection status, the latest view, the last error and `send(intent)` through a small hook. The app has three top-level states: Свързване... until the first connection or view arrives (this covers Render's cold start), Lobby when there is no room, Table otherwise. The lobby reads a room code from the URL (`/r/ABCD`, also written into the share link shown in the room) and pre-fills it; if the server reports that the token's room no longer exists the app falls back to the lobby. The table is a centered rounded felt area on a dark neutral background: the player's seat at the bottom, partner at the top, opponents left and right, computed by rotating seat indices so the view is always from the player's chair. Cards are white rounded rectangles with rank and a suit glyph in red or near-black, fanned in the hand with a muted state when not legal. Card interaction is two taps on every device: the first tap lifts and selects the card and reveals the Белот toggle when that card qualifies, the second tap on the same card sends the play intent; tapping another card moves the selection. Cards keep a minimum 44 px touch target at phone width. The bidding panel shows the six contracts as buttons in order plus Пас, Контра, Реконтра, enabled from the view's legal bids. The trick area shows the four plays positioned by seat. The score panel shows Ние / Те, the contract, multiplier, and hanging points. On trick one an Анонс button appears when the view offers declarations. The deal summary is a modal-like card with the breakdown and a countdown. MatchEnd shows the final score, the winning side and a Нова игра button that sends `newGame`. The pause overlay names the missing player, shows how long they have been gone, and after 60 seconds offers Освободи мястото, which sends `releaseSeat`. The connection banner shows Връзката е прекъсната, свързване отново... from the socket's own disconnect event, independent of the server view. The toast shows server error messages for a few seconds. Typography uses a single system-ui or Inter stack; the design tokens file holds the palette (felt green-teal, off-white cards, one accent for the active turn).
 
 **Patterns to follow:** Functional components with hooks, no global state library; all strings imported from the i18n module; CSS modules or plain CSS with tokens.
 
 **Test scenarios:**
-- App renders the lobby with Bulgarian labels when there is no view.
+- App shows the connecting state before the socket connects and the lobby with Bulgarian labels once connected with no room.
+- Opening `/r/ABCD` pre-fills the join code in the lobby.
 - Given a waiting-room view the table shows four seats with Седни buttons on empty seats and the player's own seat at the bottom.
 - Given a bidding view where it is the player's turn only the legal bid buttons are enabled.
-- Given a playing view only legal cards are clickable and clicking one sends a play intent with that card id.
-- Given a paused view the overlay names the missing player.
+- Given a playing view only legal cards are selectable; the first tap selects, the second tap on the same card sends a play intent with that card id and the current Белот toggle value.
+- Given a playing view where the selected card qualifies for белот the toggle is shown; for other cards it is hidden.
+- Given a finished view MatchEnd shows the winner and Нова игра sends `newGame`.
+- Given a paused view the overlay names the missing player; after 60 seconds the release button appears and sends `releaseSeat`.
+- When the socket reports a disconnect the banner appears while the last view stays on screen.
+- A server error event renders as a toast with the Bulgarian message.
 
 **Verification:** Tests pass; opening four browser tabs locally runs a whole deal with correct rotation per tab, and the layout holds at phone width and at desktop width without horizontal scroll.
 
@@ -429,13 +450,19 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 
 **Dependencies:** U1, U7, U8
 
-**Files:** `render.yaml`, `README.md`, `apps/server/src/index.ts`, `package.json`
+**Files:** `README.md`, `render.yaml` (finalize: health check path, `autoDeploy: false`), `apps/server/src/index.ts` (production hardening only)
 
-**Approach:** Confirm the server binds `0.0.0.0:$PORT`, serves the client build and the Socket.IO endpoint on one origin so no CORS config is needed, and answers `/healthz`. `render.yaml` declares a free Node web service with the pnpm build and start commands and the health check path. The README documents local run, GitHub push, "New Web Service" connection in Render, the free plan choice, the 15-minute spin-down and 30 to 60 second cold start, and how to share the room link. Add a short Bulgarian rules summary and the house-rule config knobs.
+**Approach:** Confirm the server binds `0.0.0.0:$PORT`, serves the client build and the Socket.IO endpoint on one origin so no CORS config is needed, and answers `/healthz`. Finalize `render.yaml` from U1 with the health check path and auto-deploy off. The README documents local run, GitHub push, "New Web Service" connection in Render, the free plan choice, the 15-minute spin-down and 30 to 60 second cold start, that every manual deploy restarts the server and drops live rooms, and how to share the room link. Add a short Bulgarian rules summary and the house-rule config knobs.
 
 **Test scenarios:** Test expectation: none -- configuration and documentation; verification is the live deploy.
 
 **Verification:** A pushed commit builds green on Render; the public URL loads the lobby; two browsers on different networks join the same room and see each other; a full deal plays over the deployed WebSocket.
+
+---
+
+## Delivery Order
+
+The units are ordered by dependency, but the evening has a cut line. Deploy the U1 scaffold to Render first so hosting problems surface in the first minutes, not the last. The first playable build is U1, U2, U3, U5 with declarations treated as zero, U6, U7, U8 and U9. If time runs short, U4 and the declaration paths in U7 and U8 (Анонс button, Белот toggle, declaration lines in the summary) are the cut: the game is fully playable without them and they layer on afterwards without changing the protocol shape. Контра, реконтра, висящи and the валат exception stay in the first build because they are a few lines of scoring each and friends will expect them.
 
 ---
 
@@ -495,6 +522,8 @@ The tree is a scope declaration; the implementer may adjust names as long as the
 - **pnpm on Render.** Render selects pnpm when a `pnpm-lock.yaml` is present; if the build image lacks it, the build command can enable it through corepack. Verified during U9.
 - **No Docker locally.** Nothing in the plan depends on Docker; the deploy path is Git connect with build and start commands.
 - **Belot timing convention.** Sources disagree on whether белот is declared on the first or second of the pair; the plan uses "either card while still holding the other", the best-attested rule.
+- **Deploys during play.** A push to Render restarts the process and every live room is lost. Auto-deploy is off and the README says to deploy between games; the client returns to the lobby when its room is gone.
+- **Hidden information has one line of defence.** All eight cards are dealt up front and hidden only by the per-seat view builder; the U7 redaction tests are the guard, so they must cover every field of the view.
 
 ---
 
