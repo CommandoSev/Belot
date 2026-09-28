@@ -8,6 +8,12 @@ import { useConnection } from "./socket";
 
 const WAKING_HINT_MS = 10_000;
 
+/** Keeps the local-testing identity switch (`?p=`) on the URL across rewrites. */
+function profileQuery(): string {
+  const p = new URLSearchParams(window.location.search).get("p");
+  return p ? `?p=${encodeURIComponent(p)}` : "";
+}
+
 /** Accepts /r/ABCD and ?room=ABCD. */
 export function readRoomCodeFromUrl(): string {
   const path = window.location.pathname.match(/^\/r\/([A-Za-z]{4})\/?$/);
@@ -38,11 +44,13 @@ export function App() {
   useEffect(() => {
     if (conn.view) {
       hadView.current = true;
-      const target = `/r/${conn.view.code}`;
-      if (window.location.pathname !== target) window.history.replaceState(null, "", target);
+      const target = `/r/${conn.view.code}${profileQuery()}`;
+      if (window.location.pathname + window.location.search !== target) {
+        window.history.replaceState(null, "", target);
+      }
     } else if (hadView.current) {
       hadView.current = false;
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(null, "", `/${profileQuery()}`);
     }
   }, [conn.view]);
 

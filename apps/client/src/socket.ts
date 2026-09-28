@@ -10,8 +10,18 @@ import type {
   ServerToClientEvents,
 } from "@belot/shared";
 
-const TOKEN_KEY = "belot.token";
-const NAME_KEY = "belot.name";
+/** `?p=2` gives a tab its own identity so one browser can play several seats when testing locally. */
+export function profileSuffix(): string {
+  try {
+    const p = new URLSearchParams(window.location.search).get("p");
+    return p ? `.${p.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16)}` : "";
+  } catch {
+    return "";
+  }
+}
+
+const TOKEN_KEY = `belot.token${profileSuffix()}`;
+const NAME_KEY = `belot.name${profileSuffix()}`;
 /** After a reconnect the server re-sends the room view at once; silence means the room is gone. */
 const ORPHAN_VIEW_MS = 4000;
 
