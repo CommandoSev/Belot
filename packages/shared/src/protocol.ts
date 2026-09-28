@@ -1,5 +1,5 @@
 // Wire protocol between client and server: intents, views, error codes and Bulgarian labels.
-import type { BidAction, CardId, Contract, Seat, Suit } from "./engine/types";
+import type { BidAction, CardId, Contract, Multiplier, Seat, Suit, Team } from "./engine/types";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -42,9 +42,109 @@ export interface SeatView {
   disconnectedForSec: number | null;
 }
 
-// Placeholder: the game unit extends this with hands, tricks, bidding and scores.
+export interface TrickPlayView {
+  seat: Seat;
+  card: CardId;
+}
+
+export interface TrickView {
+  leader: Seat;
+  plays: TrickPlayView[];
+}
+
+export interface CompletedTrickView {
+  winner: Seat;
+  plays: TrickPlayView[];
+}
+
+export interface BidRecordView {
+  seat: Seat;
+  action: BidAction;
+}
+
+export interface ContractView {
+  contract: Contract;
+  bidder: Seat;
+  multiplier: Multiplier;
+}
+
+/** A declaration offered to the viewer or revealed to the table after trick one. */
+export interface DeclarationView {
+  seat: Seat;
+  kind: "sequence" | "carre";
+  points: number;
+  /** Present once revealed (after trick one) or when offered to the owner. */
+  cards?: CardId[];
+}
+
+export interface BelotView {
+  seat: Seat;
+  suit: Suit;
+}
+
+export interface TeamDealSummaryView {
+  cardPoints: number;
+  lastTrick: number;
+  declarations: number;
+  belots: number;
+  valat: number;
+  raw: number;
+  rounded: number;
+  /** Game points actually added to the match score for this deal (after вътре, контра, висящи). */
+  awarded: number;
+}
+
+export interface DealSummaryView {
+  contract: ContractView;
+  teams: [TeamDealSummaryView, TeamDealSummaryView];
+  /** won = bidders made it, inside = bidders fell вътре, hanging = tie, bidders' points hang. */
+  result: "won" | "inside" | "hanging";
+  valatBy: Team | null;
+  hangingBefore: number;
+  hangingAfter: number;
+}
+
+/** Per-seat redacted view of a running or finished game. Never contains another seat's cards. */
 export interface GameView {
-  phase: RoomPhase;
+  phase: Exclude<RoomPhase, "waiting">;
+  dealNumber: number;
+  dealer: Seat;
+  /** Seat whose action is awaited, null during dealEnd, finished or while paused. */
+  turn: Seat | null;
+  paused: { seat: Seat; forSec: number } | null;
+  myTeam: Team | null;
+  /** Own cards sorted for display; empty for an unseated viewer. */
+  hand: CardId[];
+  handCounts: [number, number, number, number];
+  bidding: {
+    history: BidRecordView[];
+    contract: Contract | null;
+    bidder: Seat | null;
+    multiplier: Multiplier;
+  };
+  /** Final contract once bidding is done. */
+  contract: ContractView | null;
+  /** Legal bids for the viewer when it is their turn in bidding, otherwise empty. */
+  legalBids: BidAction[];
+  /** Legal cards for the viewer when it is their turn in playing, otherwise empty. */
+  legalCards: CardId[];
+  trick: TrickView | null;
+  lastTrick: CompletedTrickView | null;
+  /** 1..8 during playing. */
+  trickNumber: number;
+  /** Declarations the viewer may announce with their first-trick card (cards included). */
+  declarationsOffered: DeclarationView[];
+  /** Cards in the viewer's hand that would announce белот if played now. */
+  belotCards: CardId[];
+  /** Announced declarations; cards are revealed after trick one. */
+  declared: DeclarationView[];
+  belots: BelotView[];
+  scores: [number, number];
+  hanging: number;
+  dealSummary: DealSummaryView | null;
+  /** Seconds until the next deal starts, during dealEnd. */
+  dealEndsInSec: number | null;
+  winner: Team | null;
 }
 
 export interface RoomView {
