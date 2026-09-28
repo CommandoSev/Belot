@@ -413,3 +413,18 @@ describe("match", () => {
     expect(start).toEqual(createMatch(0));
   });
 });
+
+describe("scoreDeal in без коз", () => {
+  it("doubles the last-trick bonus as well as the card points, so a sweep is 260 before the валат bonus", () => {
+    const deal = scoreDeal(input({ contract: "notrumps", bidder: 0, valatBy: 0, lastTrickWinner: 0 }));
+    expect(deal.teams[0].cardPoints).toBe(240);
+    expect(deal.teams[0].lastTrick).toBe(20);
+    expect(deal.teams[0].raw).toBe(260 + DEFAULT_CONFIG.valatBonus);
+    expect(deal.teams[1].lastTrick).toBe(0);
+  });
+
+  it("keeps the plain 10-point last trick in every other contract", () => {
+    const deal = scoreDeal(input({ contract: "alltrumps", bidder: 0, valatBy: 0, lastTrickWinner: 0 }));
+    expect(deal.teams[0].lastTrick).toBe(10);
+  });
+});

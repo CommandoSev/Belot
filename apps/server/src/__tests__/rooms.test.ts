@@ -189,8 +189,20 @@ describe("RoomManager: connection and identity", () => {
     expect(manager.roomOf("t2")).toBe(room);
     const view = manager.buildRoomView(room, "t2");
     expect(view.mySeat).toBe(2);
-    expect(view.seats[2]).toEqual({ name: "Player t2", connected: true, disconnectedForSec: null });
+    expect(view.seats[2]).toEqual({ name: "Renamed", connected: true, disconnectedForSec: null });
     expect(manager.connect("unknown", "Nobody")).toBeNull();
+  });
+
+  it("seated players cannot move or stand while a match waits for a released seat", () => {
+    const { manager, clock, fullRoom } = setup();
+    const room = fullRoom();
+    manager.disconnect("t3");
+    clock.advance(SEAT_RELEASE_MS);
+    expect(manager.releaseSeat("t0", 3)).toEqual({ ok: true });
+    expect(room.started).toBe(false);
+    expect(manager.sit("t1", 3)).toEqual({ ok: false, code: "cannotStandDuringGame" });
+    expect(manager.stand("t1")).toEqual({ ok: false, code: "cannotStandDuringGame" });
+    expect(room.seats[1]?.token).toBe("t1");
   });
 
   it("an unseated participant that disconnects leaves the room", () => {

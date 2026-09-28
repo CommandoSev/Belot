@@ -49,11 +49,18 @@ function writeStorage(key: string, value: string): void {
   }
 }
 
+/** randomUUID is missing outside secure contexts (plain-HTTP LAN addresses); getRandomValues is not. */
+function randomToken(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** The identity token is minted once per browser and never shown; it is what unlocks a seat's hand. */
 export function getToken(): string {
   let token = readStorage(TOKEN_KEY);
   if (!token) {
-    token = crypto.randomUUID();
+    token = randomToken();
     writeStorage(TOKEN_KEY, token);
   }
   return token;
@@ -72,6 +79,8 @@ export function useConnection(): Connection {
   const viewRef = useRef<RoomView | null>(null);
   /** Intents sent before the socket exists (name just entered) are flushed on creation. */
   const pending = useRef<Array<[ClientIntent, ((result: IntentAck) => void) | undefined]>>([]);
+  const renamePending = useRef(false);
+  const nameRef = useRef(name);
 
   useEffect(() => {
     if (!name) return;
@@ -101,6 +110,7 @@ export function useConnection(): Connection {
       setView(null);
     });
 
+    renamePending.current = false;
     for (const [intent, ack] of pending.current.splice(0)) socket.emit("intent", intent, ack);
 
     return () => {
@@ -111,15 +121,18 @@ export function useConnection(): Connection {
     };
   }, [name]);
 
+  // A name change replaces the socket; intents sent in the same tick must wait for the new one.
   const send = useCallback<Connection["send"]>((intent, ack) => {
     const socket = socketRef.current;
-    if (socket) socket.emit("intent", intent, ack);
+    if (socket && !renamePending.current) socket.emit("intent", intent, ack);
     else pending.current.push([intent, ack]);
   }, []);
 
   const setName = useCallback((next: string) => {
     const trimmed = next.trim();
     if (!trimmed) return;
+    if (trimmed !== nameRef.current) renamePending.current = true;
+    nameRef.current = trimmed;
     writeStorage(NAME_KEY, trimmed);
     setNameState(trimmed);
   }, []);

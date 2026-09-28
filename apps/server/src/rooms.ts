@@ -112,10 +112,16 @@ export class RoomManager {
     this.markConnected(room, token);
     const seat = room.seats.find((s) => s?.token === token);
     if (seat) {
+      seat.name = name;
       seat.connected = true;
       seat.disconnectedAt = null;
     }
     return room;
+  }
+
+  /** A paused match (seat released, waiting for a replacement) still binds the seated players to their seats. */
+  private matchInProgress(room: Room): boolean {
+    return room.controller !== null && room.controller.phase() !== "finished";
   }
 
   /** The token's last connection dropped. Seated players keep their seat; unseated ones leave. */
@@ -178,7 +184,7 @@ export class RoomManager {
     if (room.seats[seat]) return fail(room.seats[seat].token === token ? "invalidIntent" : "seatTaken");
     const current = this.seatOf(room, token);
     if (current !== null) {
-      if (room.started) return fail("cannotStandDuringGame");
+      if (room.started || this.matchInProgress(room)) return fail("cannotStandDuringGame");
       room.seats[current] = null;
     }
     room.participants.delete(token);
@@ -197,7 +203,7 @@ export class RoomManager {
     if (!room) return fail("invalidIntent");
     const seat = this.seatOf(room, token);
     if (seat === null) return fail("notSeated");
-    if (room.started) return fail("cannotStandDuringGame");
+    if (room.started || this.matchInProgress(room)) return fail("cannotStandDuringGame");
     room.seats[seat] = null;
     room.participants.add(token);
     return OK;
@@ -250,11 +256,6 @@ export class RoomManager {
       else this.joinFailures.set(id, recent);
     }
     return removed;
-  }
-
-  /** Forgets a connection's rate-limit history (call when the socket goes away). */
-  forgetConnection(connectionId: string): void {
-    this.joinFailures.delete(connectionId);
   }
 
   buildRoomView(room: Room, token: string): RoomView {

@@ -42,6 +42,13 @@ const rooms = new RoomManager({
 /** Every live socket per browser token; a second tab shares the seat. */
 const socketsByToken = new Map<string, Set<GameSocket>>();
 
+/** Rate limits key on the client address so a reconnect does not reset them; Render sets x-forwarded-for. */
+function clientAddress(socket: GameSocket): string {
+  const forwarded = socket.handshake.headers["x-forwarded-for"];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(",")[0];
+  return first?.trim() || socket.handshake.address;
+}
+
 function serverError(code: ErrorCode) {
   return { code, message: ERROR_MESSAGES[code] };
 }
@@ -131,7 +138,7 @@ function handleIntent(socket: GameSocket, token: string, intent: ClientIntent): 
       outcome = rooms.create(token);
       break;
     case "joinRoom":
-      outcome = rooms.join(token, intent.code, socket.id);
+      outcome = rooms.join(token, intent.code, clientAddress(socket));
       break;
     case "sit":
       outcome = rooms.sit(token, intent.seat);
@@ -190,7 +197,6 @@ io.on("connection", (socket: GameSocket) => {
   });
 
   socket.on("disconnect", () => {
-    rooms.forgetConnection(socket.id);
     peers.delete(socket);
     if (peers.size > 0) return;
     socketsByToken.delete(token);

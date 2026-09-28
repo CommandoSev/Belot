@@ -65,7 +65,8 @@ export function scoreDeal(input: DealInput, config: EngineConfig = DEFAULT_CONFI
 
   const teams = TEAMS.map((team): TeamDealScore => {
     const cardPoints = cardPointsOf(input.wonCards[team], contract);
-    const lastTrick = team === lastTrickTeam ? config.lastTrickBonus : 0;
+    const lastTrickBonus = input.contract === "notrumps" ? config.lastTrickBonus * 2 : config.lastTrickBonus;
+    const lastTrick = team === lastTrickTeam ? lastTrickBonus : 0;
     const declarations = declarationPoints[team];
     const belots = input.belots[team] * BELOT_POINTS;
     const valat = team === valatBy ? config.valatBonus : 0;
