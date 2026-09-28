@@ -35,6 +35,7 @@ function fixedHands(): Card[][] {
 function biddingState(dealer: Seat = 3): GameState {
   return {
     phase: "bidding",
+    gamesWon: [0, 0],
     match: createMatch(dealer),
     config: DEFAULT_CONFIG,
     seats: seats(),

@@ -129,6 +129,7 @@ export function buildGameView(state: GameState, seat: Seat | null, now: number):
     belots: state.belots.map((b) => ({ seat: b.seat, suit: b.suit })),
     scores: [match.scores[0], match.scores[1]],
     hanging: match.hanging,
+    gamesWon: [state.gamesWon[0], state.gamesWon[1]],
     dealSummary,
     dealEndsInSec:
       phase === "dealEnd" && state.dealEndsAt !== null ? Math.max(0, Math.ceil((state.dealEndsAt - now) / 1000)) : null,

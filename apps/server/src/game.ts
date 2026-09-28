@@ -58,6 +58,8 @@ export interface GameState {
   /** "waiting" while a released seat is empty; the room reports that phase itself. */
   phase: RoomPhase;
   match: MatchState;
+  /** Matches won per team for the life of the room. */
+  gamesWon: [number, number];
   config: EngineConfig;
   /** Live reference to the room's seats; pause is derived from it. */
   seats: readonly (SeatState | null)[];
@@ -101,7 +103,7 @@ export class GameController implements GameHost {
     this.config = deps.config ?? DEFAULT_CONFIG;
     this.dealEndDelayMs = deps.dealEndDelayMs ?? DEAL_END_DELAY_MS;
     const firstDealer = Math.floor(this.rng() * 4) as Seat;
-    this.state = this.dealFor(createMatch(firstDealer));
+    this.state = this.dealFor(createMatch(firstDealer), [0, 0]);
   }
 
   /** The unredacted state, for tests. */
@@ -136,7 +138,7 @@ export class GameController implements GameHost {
     this.state =
       this.state.match.winner !== null
         ? { ...this.state, phase: "finished" }
-        : this.dealFor(this.state.match);
+        : this.dealFor(this.state.match, this.state.gamesWon);
     this.deps.onChange(this.room);
   }
 
@@ -150,7 +152,7 @@ export class GameController implements GameHost {
 
     const { state: next, result } = applyBid(bidding, seat, action);
     if (result === "redeal") {
-      this.state = this.dealFor(redealMatch(this.state.match));
+      this.state = this.dealFor(redealMatch(this.state.match), this.state.gamesWon);
       return null;
     }
     if (result === "continue") {
@@ -214,10 +216,14 @@ export class GameController implements GameHost {
       hangingBefore: match.hanging,
     };
     const dealScore = scoreDeal(input, this.config);
+    const nextMatch = applyDealToMatch(match, dealScore, this.config);
+    const gamesWon: [number, number] = [...this.state.gamesWon];
+    if (nextMatch.winner !== null) gamesWon[nextMatch.winner] += 1;
     this.state = {
       ...this.state,
       phase: "dealEnd",
-      match: applyDealToMatch(match, dealScore, this.config),
+      match: nextMatch,
+      gamesWon,
       dealScore,
       dealEndsAt: this.now() + this.dealEndDelayMs,
     };
@@ -231,22 +237,25 @@ export class GameController implements GameHost {
     if (this.state.phase !== "dealEnd") return;
     const { match } = this.state;
     this.state =
-      match.winner !== null ? { ...this.state, phase: "finished", dealEndsAt: null } : this.dealFor(match);
+      match.winner !== null
+        ? { ...this.state, phase: "finished", dealEndsAt: null }
+        : this.dealFor(match, this.state.gamesWon);
     this.deps.onChange(this.room);
   }
 
   private newGame(): ErrorCode | null {
     if (this.state.phase !== "finished") return "illegalMove";
     this.clearTimer();
-    this.state = this.dealFor(createMatch(nextSeat(this.state.bidding.dealer)));
+    this.state = this.dealFor(createMatch(nextSeat(this.state.bidding.dealer)), this.state.gamesWon);
     return null;
   }
 
   /** A fresh deal for the match's current dealer. */
-  private dealFor(match: MatchState): GameState {
+  private dealFor(match: MatchState, gamesWon: [number, number]): GameState {
     return {
       phase: "bidding",
       match,
+      gamesWon,
       config: this.config,
       seats: this.room.seats,
       dealNumber: match.dealNumber,

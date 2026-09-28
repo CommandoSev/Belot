@@ -141,6 +141,8 @@ export interface GameView {
   belots: BelotView[];
   scores: [number, number];
   hanging: number;
+  /** Matches won by each team since the room started; survives Нова игра. */
+  gamesWon: [number, number];
   dealSummary: DealSummaryView | null;
   /** Seconds until the next deal starts, during dealEnd. */
   dealEndsInSec: number | null;

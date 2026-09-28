@@ -365,9 +365,15 @@ describe("GameController: deal end and match", () => {
     expect(c.phase()).toBe("finished");
     const lastDealer = c.view(0)!.dealer;
 
+    const finishedView = c.view(0)!;
+    expect(finishedView.winner).not.toBeNull();
+    const expectedGames: [number, number] = finishedView.winner === 0 ? [1, 0] : [0, 1];
+    expect(finishedView.gamesWon).toEqual(expectedGames);
+
     expect(c.onIntent(2, { type: "newGame" })).toBeNull();
     expect(c.phase()).toBe("bidding");
     const view = c.view(0)!;
+    expect(view.gamesWon).toEqual(expectedGames);
     expect(view.scores).toEqual([0, 0]);
     expect(view.hanging).toBe(0);
     expect(view.winner).toBeNull();
