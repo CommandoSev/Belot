@@ -5,3 +5,4 @@ export * from "./deal";
 export * from "./bidding";
 export * from "./tricks";
 export * from "./declarations";
+export * from "./scoring";
