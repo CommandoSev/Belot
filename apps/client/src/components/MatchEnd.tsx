@@ -20,6 +20,9 @@ export function MatchEnd({ game, send }: MatchEndProps) {
             {t.winner}: <strong>{t.teamName(winner, game.myTeam)}</strong>
           </p>
         )}
+        <p className="match-games">
+          {t.games} {game.gamesWon[first]}:{game.gamesWon[second]}
+        </p>
         <p className="modal-subtitle">{t.finalScore}</p>
         <div className="score-teams">
           <div className="score-team">

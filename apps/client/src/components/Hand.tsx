@@ -1,47 +1,48 @@
-import { useState } from "react";
-import type { CardId, ClientIntent, GameView } from "@belot/shared";
+import { useEffect, useState } from "react";
+import type { CardId, ClientIntent, GameView, IntentAck } from "@belot/shared";
 import { t } from "../i18n/bg";
 import { sortHand } from "../lib/table";
 import { Card, cardLabel } from "./Card";
 
 interface HandProps {
   game: GameView;
-  send: (intent: ClientIntent) => void;
+  send: (intent: ClientIntent, ack?: (result: IntentAck) => void) => void;
 }
 
-/** Two taps on every device: the first lifts a legal card, the second on the same card plays it. */
+/** One tap plays a legal card; the announcement toggles live in a toolbar above the hand. */
 export function Hand({ game, send }: HandProps) {
-  const [picked, setPicked] = useState<CardId | null>(null);
+  const [lifted, setLifted] = useState<CardId | null>(null);
   const [belot, setBelot] = useState(true);
   const [declare, setDeclare] = useState(true);
 
   const contract = game.contract?.contract ?? game.bidding.contract;
   const cards = sortHand(game.hand, contract);
   const legal = new Set(game.legalCards);
-  const selected = picked && legal.has(picked) ? picked : null;
-  const belotOffered = selected !== null && game.belotCards.includes(selected);
-  const declareOffered = selected !== null && game.trickNumber === 1 && game.declarationsOffered.length > 0;
+  const belotCards = new Set(game.belotCards);
+  const declareOffered = game.trickNumber === 1 && game.declarationsOffered.length > 0;
+  const belotOffered = belotCards.size > 0;
+
+  // The lifted card stays up until the next view removes it from the hand (or the server rejects the play).
+  useEffect(() => setLifted(null), [game]);
 
   const tap = (card: CardId) => {
-    if (!legal.has(card)) return;
-    if (selected === card) {
-      send({ type: "play", card, declare: declareOffered && declare, belot: belotOffered && belot });
-      setPicked(null);
-      return;
-    }
-    setPicked(card);
+    if (!legal.has(card) || lifted !== null) return;
+    setLifted(card);
+    const intent: ClientIntent = {
+      type: "play",
+      card,
+      declare: declareOffered && declare,
+      belot: belotOffered && belot && belotCards.has(card),
+    };
+    send(intent, (result) => {
+      if (!result.ok) setLifted(null);
+    });
   };
 
   return (
     <div className="hand-area">
-      {selected && (
+      {(declareOffered || belotOffered) && (
         <div className="hand-options">
-          {belotOffered && (
-            <label className="toggle">
-              <input type="checkbox" checked={belot} onChange={(e) => setBelot(e.target.checked)} />
-              <span>{t.belot}</span>
-            </label>
-          )}
           {declareOffered && (
             <label className="toggle">
               <input type="checkbox" checked={declare} onChange={(e) => setDeclare(e.target.checked)} />
@@ -54,7 +55,12 @@ export function Hand({ game, send }: HandProps) {
               </span>
             </label>
           )}
-          <span className="hand-hint">{t.selectCard}</span>
+          {belotOffered && (
+            <label className="toggle">
+              <input type="checkbox" checked={belot} onChange={(e) => setBelot(e.target.checked)} />
+              <span>{t.belot}</span>
+            </label>
+          )}
         </div>
       )}
       <div className="hand" role="group" aria-label={t.cards(cards.length)}>
@@ -64,13 +70,12 @@ export function Hand({ game, send }: HandProps) {
             <button
               key={card}
               type="button"
-              className={`card-slot${selected === card ? " card-slot-selected" : ""}`}
+              className={`card-slot${lifted === card ? " card-slot-lifted" : ""}`}
               aria-label={cardLabel(card)}
-              aria-pressed={selected === card}
               disabled={!isLegal}
               onClick={() => tap(card)}
             >
-              <Card id={card} selected={selected === card} muted={legal.size > 0 && !isLegal} />
+              <Card id={card} muted={legal.size > 0 && !isLegal} badge={belotCards.has(card) ? t.belot : undefined} />
             </button>
           );
         })}

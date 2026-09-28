@@ -1,4 +1,4 @@
-import type { RoomView, Seat as SeatIndex } from "@belot/shared";
+import { partnerOf, type RoomView, type Seat as SeatIndex } from "@belot/shared";
 import { t } from "../i18n/bg";
 import { seatName, type Position } from "../lib/table";
 import { Card } from "./Card";
@@ -22,6 +22,8 @@ export function Seat({ seat, position, view, onSit, onStand }: SeatProps) {
   const waiting = view.phase === "waiting";
   const handCount = game?.handCounts[seat] ?? 0;
   const label = seatName(seat, view.mySeat);
+  const isPartner = view.mySeat !== null && partnerOf(view.mySeat) === seat;
+  const partnerName = view.seats[partnerOf(seat)]?.name ?? null;
 
   const classes = ["seat", `seat-${POSITION_CLASS[position]}`];
   if (isTurn) classes.push("seat-turn");
@@ -38,6 +40,7 @@ export function Seat({ seat, position, view, onSit, onStand }: SeatProps) {
             {occupant.name}
             {isMe && <span className="seat-you"> ({t.you})</span>}
           </div>
+          {isPartner && <span className="badge badge-partner">{t.partner}</span>}
           {!occupant.connected && <span className="badge badge-offline">{t.disconnected}</span>}
           {isDealer && <span className="badge badge-dealer">{t.dealer}</span>}
           {game && handCount > 0 && !isMe && (
@@ -62,6 +65,7 @@ export function Seat({ seat, position, view, onSit, onStand }: SeatProps) {
               {t.sit}
             </button>
           )}
+          {waiting && partnerName !== null && <div className="seat-hint">{t.partnerIs(partnerName)}</div>}
         </>
       )}
     </div>

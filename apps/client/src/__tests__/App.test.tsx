@@ -124,7 +124,10 @@ describe("waiting table", () => {
     expect(bottom).toHaveTextContent("Вие");
     expect(bottom).toHaveTextContent("Юг");
     expect(screen.getByTestId("seat-top")).toHaveTextContent("Свободно");
+    expect(screen.getByTestId("seat-top")).toHaveTextContent("Партньор: Мария");
     expect(screen.getByTestId("seat-left")).toHaveTextContent("Иван");
+    expect(screen.getByTestId("seat-right")).toHaveTextContent("Партньор: Иван");
+    expect(screen.getByTestId("seat-right")).toHaveTextContent("Свободно");
     expect(screen.getByText("Чакаме играчи")).toBeInTheDocument();
     expect(screen.getByText("2 свободни места")).toBeInTheDocument();
   });
@@ -144,6 +147,18 @@ describe("waiting table", () => {
     expect(screen.getAllByRole("button", { name: "Седни" })).toHaveLength(4);
     fireEvent.click(within(screen.getByTestId("seat-bottom")).getByRole("button", { name: "Седни" }));
     expect(conn.send).toHaveBeenCalledWith({ type: "sit", seat: 0 });
+  });
+
+  it("toggles the sound button next to the share link and persists it", () => {
+    localStorage.removeItem("belot.sound");
+    renderApp(connection({ view: waitingView() }));
+    const sound = screen.getByRole("button", { name: "Звук" });
+    expect(sound).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(sound);
+    expect(sound).toHaveAttribute("aria-pressed", "false");
+    expect(localStorage.getItem("belot.sound")).toBe("off");
+    fireEvent.click(sound);
+    expect(localStorage.getItem("belot.sound")).toBe("on");
   });
 
   it("copies the share link", async () => {
@@ -185,50 +200,59 @@ describe("bidding", () => {
 });
 
 describe("playing", () => {
-  it("lets only legal cards be selected and plays on the second tap", () => {
+  it("plays a legal card on a single tap and keeps illegal cards disabled", () => {
     const conn = connection({ view: playingView() });
     renderApp(conn);
     expect(screen.getByRole("button", { name: "A♥" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "7♣" })).toBeDisabled();
     const jack = screen.getByRole("button", { name: "J♠" });
     expect(jack).toBeEnabled();
+    expect(screen.queryByLabelText("Белот")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Анонс/)).not.toBeInTheDocument();
 
     fireEvent.click(jack);
-    expect(jack).toHaveAttribute("aria-pressed", "true");
-    expect(conn.send).not.toHaveBeenCalled();
-
-    fireEvent.click(jack);
-    expect(conn.send).toHaveBeenCalledWith({ type: "play", card: "JS", declare: false, belot: false });
+    expect(conn.send).toHaveBeenCalledTimes(1);
+    expect(conn.send).toHaveBeenCalledWith({ type: "play", card: "JS", declare: false, belot: false }, expect.any(Function));
+    expect(jack.className).toContain("card-slot-lifted");
   });
 
-  it("moves the selection when another legal card is tapped", () => {
+  it("ignores further taps while a play is in flight and unlocks when the server rejects it", () => {
     const conn = connection({ view: playingView() });
     renderApp(conn);
     fireEvent.click(screen.getByRole("button", { name: "J♠" }));
     fireEvent.click(screen.getByRole("button", { name: "9♠" }));
-    expect(screen.getByRole("button", { name: "J♠" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "9♠" })).toHaveAttribute("aria-pressed", "true");
-    expect(conn.send).not.toHaveBeenCalled();
+    expect(conn.send).toHaveBeenCalledTimes(1);
+
+    const ack = vi.mocked(conn.send).mock.calls[0]![1]!;
+    act(() => ack({ ok: false, error: { code: "illegalMove", message: "Невалиден ход" } }));
+    fireEvent.click(screen.getByRole("button", { name: "9♠" }));
+    expect(conn.send).toHaveBeenCalledTimes(2);
+    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "9S", declare: false, belot: false }, expect.any(Function));
   });
 
-  it("shows the Белот toggle only for a qualifying card and sends its value", () => {
+  it("shows the Белот toggle and badges when belot cards exist and sends the flag only for those cards", () => {
     const conn = connection({
       view: playingView({ legalCards: ["KD", "QD", "JS"], belotCards: ["KD", "QD"] }),
     });
-    renderApp(conn);
-    fireEvent.click(screen.getByRole("button", { name: "J♠" }));
-    expect(screen.queryByLabelText("Белот")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "K♦" }));
+    const { rerender } = renderApp(conn);
     const toggle = screen.getByLabelText("Белот");
     expect(toggle).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "K♦" }));
-    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "KD", declare: false, belot: true });
+    expect(screen.getByRole("button", { name: "K♦" }).querySelector(".card-badge")).toHaveTextContent("Белот");
+    expect(screen.getByRole("button", { name: "J♠" }).querySelector(".card-badge")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Q♦" }));
+    fireEvent.click(screen.getByRole("button", { name: "J♠" }));
+    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "JS", declare: false, belot: false }, expect.any(Function));
+
+    useConnectionMock.mockReturnValue({ ...conn, view: playingView({ legalCards: ["KD", "QD"], belotCards: ["KD", "QD"] }) });
+    rerender(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "K♦" }));
+    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "KD", declare: false, belot: true }, expect.any(Function));
+
+    useConnectionMock.mockReturnValue({ ...conn, view: playingView({ hand: ["QD", "JS"], legalCards: ["QD"], belotCards: ["QD"] }) });
+    rerender(<App />);
     fireEvent.click(screen.getByLabelText("Белот"));
     fireEvent.click(screen.getByRole("button", { name: "Q♦" }));
-    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "QD", declare: false, belot: false });
+    expect(conn.send).toHaveBeenLastCalledWith({ type: "play", card: "QD", declare: false, belot: false }, expect.any(Function));
   });
 
   it("offers the Анонс toggle on trick one when declarations are offered", () => {
@@ -238,10 +262,22 @@ describe("playing", () => {
       }),
     });
     renderApp(conn);
-    fireEvent.click(screen.getByRole("button", { name: "J♠" }));
     expect(screen.getByLabelText(/Анонс/)).toBeChecked();
+    expect(screen.getByLabelText(/Анонс/).parentElement).toHaveTextContent("Терца 20");
     fireEvent.click(screen.getByRole("button", { name: "J♠" }));
-    expect(conn.send).toHaveBeenCalledWith({ type: "play", card: "JS", declare: true, belot: false });
+    expect(conn.send).toHaveBeenCalledWith({ type: "play", card: "JS", declare: true, belot: false }, expect.any(Function));
+  });
+
+  it("sends declare false when the Анонс toggle is switched off", () => {
+    const conn = connection({
+      view: playingView({
+        declarationsOffered: [{ seat: 1, kind: "carre", points: 100, cards: ["JS", "JH", "JD", "JC"] }],
+      }),
+    });
+    renderApp(conn);
+    fireEvent.click(screen.getByLabelText(/Анонс/));
+    fireEvent.click(screen.getByRole("button", { name: "J♠" }));
+    expect(conn.send).toHaveBeenCalledWith({ type: "play", card: "JS", declare: false, belot: false }, expect.any(Function));
   });
 
   it("hides the Анонс toggle after trick one", () => {
@@ -253,7 +289,6 @@ describe("playing", () => {
         }),
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "J♠" }));
     expect(screen.queryByLabelText(/Анонс/)).not.toBeInTheDocument();
   });
 
@@ -266,6 +301,7 @@ describe("playing", () => {
           trick: { leader: 0, plays: [{ seat: 0, card: "AC" }, { seat: 1, card: "KC" }] },
           scores: [12, 30],
           hanging: 8,
+          gamesWon: [1, 2],
           contract: { contract: "hearts", bidder: 1, multiplier: 2 },
         }),
       }),
@@ -282,7 +318,16 @@ describe("playing", () => {
     expect(score).toHaveTextContent("Купа ♥");
     expect(score).toHaveTextContent("Контра");
     expect(score).toHaveTextContent("Обявил: Мария");
+    expect(screen.getByTestId("games-won")).toHaveTextContent("Игри 2:1");
     expect(screen.getByText(/На ход е Петър/)).toBeInTheDocument();
+  });
+
+  it("tags the seat opposite the viewer as the partner", () => {
+    renderApp(connection({ view: playingView() }));
+    expect(screen.getByTestId("seat-top")).toHaveTextContent("Партньор");
+    expect(screen.getByTestId("seat-top")).toHaveTextContent("Елена");
+    expect(screen.getByTestId("seat-left")).not.toHaveTextContent("Партньор");
+    expect(screen.getByTestId("seat-bottom")).not.toHaveTextContent("Партньор");
   });
 
   it("lists revealed declarations and belots after trick one", () => {
@@ -337,11 +382,12 @@ describe("deal end and match end", () => {
 
   it("shows the winner on a finished view and Нова игра sends newGame", () => {
     const conn = connection({
-      view: playingView({ phase: "finished", turn: null, legalCards: [], scores: [120, 155], winner: 1 }, { phase: "finished" }),
+      view: playingView({ phase: "finished", turn: null, legalCards: [], scores: [120, 155], winner: 1, gamesWon: [0, 1] }, { phase: "finished" }),
     });
     renderApp(conn);
     const dialog = screen.getByRole("dialog", { name: "Край на играта" });
     expect(dialog).toHaveTextContent("Печели: Ние");
+    expect(dialog).toHaveTextContent("Игри 1:0");
     expect(dialog).toHaveTextContent("155");
     fireEvent.click(screen.getByRole("button", { name: "Нова игра" }));
     expect(conn.send).toHaveBeenCalledWith({ type: "newGame" });

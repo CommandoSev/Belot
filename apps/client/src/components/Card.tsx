@@ -6,8 +6,9 @@ interface CardProps {
   id?: CardId;
   back?: boolean;
   size?: "sm" | "md";
-  selected?: boolean;
   muted?: boolean;
+  /** Small corner tag, e.g. "Белот" on a card that would announce one. */
+  badge?: string;
   className?: string;
 }
 
@@ -16,9 +17,8 @@ export function cardLabel(id: CardId): string {
   return `${card.rank}${t.suits[card.suit]}`;
 }
 
-export function Card({ id, back, size = "md", selected, muted, className }: CardProps) {
+export function Card({ id, back, size = "md", muted, badge, className }: CardProps) {
   const classes = ["card", `card-${size}`];
-  if (selected) classes.push("card-selected");
   if (muted) classes.push("card-muted");
   if (className) classes.push(className);
 
@@ -43,6 +43,11 @@ export function Card({ id, back, size = "md", selected, muted, className }: Card
         <span className="card-rank">{card.rank}</span>
         <span className="card-suit">{glyph}</span>
       </span>
+      {badge && (
+        <span className="card-badge" aria-hidden="true">
+          {badge}
+        </span>
+      )}
     </div>
   );
 }

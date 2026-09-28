@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import type { ClientIntent, RoomView, Seat as SeatIndex } from "@belot/shared";
+import type { ClientIntent, IntentAck, RoomView, Seat as SeatIndex } from "@belot/shared";
 import { t } from "../i18n/bg";
 import { playerName, seatAt, type Position } from "../lib/table";
+import { useSoundToggle } from "../sound";
+import { useGameSounds } from "../useGameSounds";
 import { BiddingPanel } from "./BiddingPanel";
 import { DealSummary } from "./DealSummary";
 import { Hand } from "./Hand";
@@ -13,7 +15,7 @@ import { TrickArea } from "./TrickArea";
 
 interface TableProps {
   view: RoomView;
-  send: (intent: ClientIntent) => void;
+  send: (intent: ClientIntent, ack?: (result: IntentAck) => void) => void;
 }
 
 const POSITIONS: Position[] = [2, 3, 1, 0];
@@ -24,7 +26,9 @@ function shareUrl(code: string): string {
 
 export function Table({ view, send }: TableProps) {
   const [copied, setCopied] = useState(false);
+  const [soundOn, toggleSound] = useSoundToggle();
   const game = view.game;
+  useGameSounds(view, view.mySeat);
   const freeSeats = view.seats.filter((s) => s === null).length;
 
   useEffect(() => {
@@ -71,6 +75,16 @@ export function Table({ view, send }: TableProps) {
         <div className="room-actions">
           <button type="button" className="btn btn-ghost btn-small" onClick={share}>
             {copied ? t.copied : t.share}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-small btn-icon"
+            aria-label={t.sound}
+            aria-pressed={soundOn}
+            title={t.sound}
+            onClick={toggleSound}
+          >
+            <span aria-hidden="true">{soundOn ? "🔊" : "🔇"}</span>
           </button>
           {view.phase === "waiting" && (
             <button type="button" className="btn btn-ghost btn-small" onClick={() => send({ type: "leaveRoom" })}>

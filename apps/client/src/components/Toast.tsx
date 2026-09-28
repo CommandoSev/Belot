@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LastError } from "../socket";
+import { playSound } from "../sound";
 
 const TOAST_MS = 4000;
 
@@ -9,6 +10,7 @@ export function Toast({ error }: { error: LastError | null }) {
   useEffect(() => {
     if (!error) return;
     setVisible(error);
+    playSound("error");
     const timer = setTimeout(() => setVisible(null), TOAST_MS);
     return () => clearTimeout(timer);
   }, [error]);

@@ -28,11 +28,16 @@ export function ScorePanel({ game, view }: ScorePanelProps) {
           <span className="score-value">{game.scores[other]}</span>
         </div>
       </div>
-      {game.hanging > 0 && (
-        <div className="score-hanging">
-          {t.hanging}: <strong>{game.hanging}</strong>
-        </div>
-      )}
+      <div className="score-meta-row">
+        <span className="score-games" data-testid="games-won">
+          {t.games} {game.gamesWon[myTeam]}:{game.gamesWon[other]}
+        </span>
+        {game.hanging > 0 && (
+          <span className="score-hanging">
+            {t.hanging}: <strong>{game.hanging}</strong>
+          </span>
+        )}
+      </div>
       <div className="score-contract">
         {contract ? (
           <>

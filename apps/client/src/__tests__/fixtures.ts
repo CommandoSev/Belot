@@ -51,6 +51,7 @@ export function gameView(overrides: Partial<GameView> = {}): GameView {
     belots: [],
     scores: [0, 0],
     hanging: 0,
+    gamesWon: [0, 0],
     dealSummary: null,
     dealEndsInSec: null,
     winner: null,
