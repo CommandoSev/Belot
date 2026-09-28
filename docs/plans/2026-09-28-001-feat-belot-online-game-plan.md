@@ -1,7 +1,7 @@
 ---
 title: "feat: Belot online game for four friends"
 type: feat
-status: active
+status: completed
 date: 2026-09-28
 ---
 
