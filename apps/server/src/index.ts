@@ -15,6 +15,7 @@ import {
   type Seat,
   type ServerToClientEvents,
 } from "@belot/shared";
+import { createGameController } from "./game";
 import { RoomManager, type Room } from "./rooms";
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -34,8 +35,9 @@ app.use((_req, res) => {
   res.sendFile(path.join(clientDist, "index.html"));
 });
 
-// The game unit supplies `startHook`; until then a full room has no controller and game intents are rejected.
-const rooms = new RoomManager();
+const rooms = new RoomManager({
+  startHook: (room) => createGameController(room, { onChange: emitRoom }),
+});
 
 /** Every live socket per browser token; a second tab shares the seat. */
 const socketsByToken = new Map<string, Set<GameSocket>>();
