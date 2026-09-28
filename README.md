@@ -24,7 +24,7 @@ pnpm test       # Vitest: engine, server, client
 Проектът съдържа `render.yaml` за безплатен Web Service (без карта).
 
 1. Качете репото в GitHub (публично или частно).
-2. В [dashboard.render.com](https://dashboard.render.com) изберете **New → Blueprint** и посочете репото. Render чете `render.yaml`: `corepack enable && pnpm install --frozen-lockfile && pnpm build`, стартира с `pnpm start`, health check на `/healthz`, план **Free**.
+2. В [dashboard.render.com](https://dashboard.render.com) изберете **New → Blueprint** и посочете репото. Render чете `render.yaml`: `npm install -g pnpm@10.17.1 && pnpm install --frozen-lockfile && pnpm build`, стартира с `pnpm start`, health check на `/healthz`, план **Free**.
 3. Изчакайте първия билд (2–4 минути). Адресът е `https://<име>.onrender.com`. Не задавайте `PORT` ръчно, Render го подава сам.
 4. Споделете линка на стаята (`/r/КОД`) с приятелите си.
 

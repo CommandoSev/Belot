@@ -4,6 +4,6 @@ services:
     runtime: node
     plan: free
     autoDeploy: false
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    buildCommand: npm install -g pnpm@10.17.1 && pnpm install --frozen-lockfile && pnpm build
     startCommand: pnpm start
     healthCheckPath: /healthz
