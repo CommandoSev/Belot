@@ -1,0 +1,50 @@
+/* Design tokens: one dark neutral page, a felt table, off-white cards, one accent for the active turn. */
+:root {
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  --bg: #15171c;
+  --bg-elev: #1d2027;
+  --surface: #252932;
+  --surface-hover: #2d323d;
+  --border: #353b48;
+  --text: #eef0f4;
+  --text-muted: #98a1b1;
+
+  --felt: #1e5c53;
+  --felt-deep: #16463f;
+  --felt-edge: #2a7266;
+
+  --card: #fbf9f4;
+  --card-ink: #1b1d22;
+  --card-red: #c62f39;
+  --card-back: #2f5a95;
+  --card-back-line: #4d7ec2;
+
+  --accent: #f5b940;
+  --accent-ink: #1c1400;
+  --danger: #e5484d;
+  --danger-ink: #fff;
+  --ok: #3ccb7f;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-card: 8px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.3);
+
+  --card-w: 72px;
+  --card-h: 102px;
+  --card-sm-w: 44px;
+  --card-sm-h: 62px;
+  --touch: 44px;
+
+  --ease: 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
